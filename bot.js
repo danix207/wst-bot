@@ -13,8 +13,13 @@ const userMoodMap = {};
 
 app.post('/incoming', async (req, res) => {
   const userNumber = req.body.From;
-  const userMessage = req.body.Body.trim();
+  const userMessage = req.body.Body?.trim();
 
+  if (!userNumber || !userMessage) {
+    return res.status(400).send('Requête invalide');
+  }
+
+  // Définir l’humeur par défaut si pas encore enregistrée
   if (!userMoodMap[userNumber]) {
     userMoodMap[userNumber] = 'curieux';
   }
@@ -22,43 +27,52 @@ app.post('/incoming', async (req, res) => {
   const mood = userMoodMap[userNumber];
 
   try {
-    const result = await axios.get(`https://api.duckduckgo.com/?q=${encodeURIComponent(userMessage)}&format=json`);
-    const answer = result.data?.Abstract || "Je n’ai rien trouvé pour ta question 😕.";
+    const search = await axios.get(`https://api.duckduckgo.com/?q=${encodeURIComponent(userMessage)}&format=json`);
+    const snippet = search.data?.Abstract || "Désolé, je n’ai pas trouvé de réponse 😕.";
 
     let reply = '';
     switch (mood) {
       case 'curieux':
-        reply = `📖 Voici ce que j’ai trouvé : ${answer}`;
+        reply = `📖 Voici ce que j’ai appris : ${snippet}`;
         break;
       case 'humoristique':
-        reply = `🤣 Mon serveur a rigolé : ${answer}`;
+        reply = `🤣 Même mon processeur a rigolé : ${snippet}`;
         break;
       default:
-        reply = `✅ Résultat : ${answer}`;
+        reply = `✅ Résultat : ${snippet}`;
     }
 
-    await axios.post(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`, new URLSearchParams({
-      From: TWILIO_PHONE,
-      To: userNumber,
-      Body: reply
-    }), {
-      auth: {
-        username: TWILIO_SID,
-        password: TWILIO_TOKEN
+    // Envoi du message via l'API Twilio (HTTP Basic Auth)
+    await axios.post(
+      `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`,
+      new URLSearchParams({
+        From: TWILIO_PHONE,
+        To: userNumber,
+        Body: reply
+      }),
+      {
+        auth: {
+          username: TWILIO_SID,
+          password: TWILIO_TOKEN
+        }
       }
-    });
+    );
 
   } catch (error) {
-    await axios.post(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`, new URLSearchParams({
-      From: TWILIO_PHONE,
-      To: userNumber,
-      Body: "❌ Une erreur s’est produite. Essaie encore plus tard !"
-    }), {
-      auth: {
-        username: TWILIO_SID,
-        password: TWILIO_TOKEN
+    await axios.post(
+      `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`,
+      new URLSearchParams({
+        From: TWILIO_PHONE,
+        To: userNumber,
+        Body: "❌ Une erreur est survenue. Essaie encore dans un instant !"
+      }),
+      {
+        auth: {
+          username: TWILIO_SID,
+          password: TWILIO_TOKEN
+        }
       }
-    });
+    );
   }
 
   res.sendStatus(200);
