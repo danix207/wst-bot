@@ -6,50 +6,63 @@ const twilio = require('twilio');
 const app = express();
 app.use(express.urlencoded({ extended: false }));
 
-const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
-const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
-const personaMap = {}; // Mémoire par utilisateur
+const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+const personaMap = {};
 
 app.post('/incoming', async (req, res) => {
-  const twiml = new twilio.twiml.MessagingResponse();
   const userNumber = req.body.From;
   const userMessage = req.body.Body.trim();
 
+  // Si l'utilisateur est nouveau, on lui demande son nom
   if (!personaMap[userNumber]) {
     personaMap[userNumber] = {
       name: userMessage,
       mood: 'curieux'
     };
-    twiml.message(`Salut ${userMessage} 👋 ! Pose-moi ta première question.`);
+
+    await client.messages.create({
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: userNumber,
+      body: `Salut ${userMessage} 👋 ! Enchanté. Pose-moi ta première question et je vais chercher la réponse pour toi.`
+    });
   } else {
     const { name, mood } = personaMap[userNumber];
+
     try {
-      const response = await axios.get(`https://api.duckduckgo.com/?q=${encodeURIComponent(userMessage)}&format=json`);
-      const answer = response.data?.Abstract || "Désolé, pas de réponse trouvée.";
+      const search = await axios.get(`https://api.duckduckgo.com/?q=${encodeURIComponent(userMessage)}&format=json`);
+      const snippet = search.data?.Abstract || "Désolé, aucune réponse n'a été trouvée 😕.";
 
       let reply = '';
       switch (mood) {
         case 'curieux':
-          reply = `Alors ${name}, voici ce que j'ai découvert : ${answer}`;
+          reply = `Alors ${name}, voici ce que j’ai trouvé 📚 : ${snippet}`;
           break;
         case 'humoristique':
-          reply = `${name}, même mon CPU rigole 🤣 : ${answer}`;
+          reply = `${name}, même mon processeur rigole 😂 : ${snippet}`;
           break;
         default:
-          reply = `Voilà ta réponse, ${name} : ${answer}`;
+          reply = `Voilà la réponse pour toi, ${name} : ${snippet}`;
       }
 
-      twiml.message(reply);
+      await client.messages.create({
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to: userNumber,
+        body: reply
+      });
     } catch (err) {
-      twiml.message("Une erreur est survenue pendant la recherche 🛠️");
+      await client.messages.create({
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to: userNumber,
+        body: "Oups, j’ai eu un petit bug en cherchant ta réponse 😅. Essaie encore !"
+      });
     }
   }
 
-  res.writeHead(200, { 'Content-Type': 'text/xml' });
-  res.end(twiml.toString());
+  // Réponse HTTP pour confirmer à Twilio que tout va bien
+  res.sendStatus(200);
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✅ Bot en ligne sur http://localhost:${PORT}`);
+  console.log(`✅ Bot actif sur le port ${PORT}`);
 });
