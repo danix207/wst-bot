@@ -6,14 +6,16 @@ const twilio = require('twilio');
 const app = express();
 app.use(express.urlencoded({ extended: false }));
 
+// ✅ INITIALISATION CORRECTE DE TWILIO
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-const personaMap = {}; // Mémoire utilisateur
+
+const personaMap = {}; // Mémoire des utilisateurs
 
 app.post('/incoming', async (req, res) => {
   const userNumber = req.body.From;
   const userMessage = req.body.Body.trim();
 
-  // Premier message → récupérer le nom
+  // 🔰 Première interaction : demander le prénom
   if (!personaMap[userNumber]) {
     personaMap[userNumber] = {
       name: userMessage,
@@ -23,26 +25,27 @@ app.post('/incoming', async (req, res) => {
     await client.messages.create({
       from: process.env.TWILIO_PHONE_NUMBER,
       to: userNumber,
-      body: `Salut ${userMessage} 👋 ! Dis-moi ce que tu veux savoir, je vais explorer le web pour toi 🔍.`
+      body: `Bienvenue ${userMessage} 👋 ! Pose-moi ta première question et je vais chercher pour toi 🔎.`
     });
 
   } else {
     const { name, mood } = personaMap[userNumber];
 
     try {
-      const result = await axios.get(`https://api.duckduckgo.com/?q=${encodeURIComponent(userMessage)}&format=json`);
-      const snippet = result.data?.Abstract || "Aucune réponse trouvée 😔.";
+      const response = await axios.get(`https://api.duckduckgo.com/?q=${encodeURIComponent(userMessage)}&format=json`);
+      const answer = response.data?.Abstract || "Désolé, aucune réponse n'a été trouvée 😅.";
 
+      // 🔆 Personnalité dynamique selon l’humeur
       let reply = '';
       switch (mood) {
         case 'curieux':
-          reply = `Alors ${name}, voici ce que j’ai trouvé 📖 : ${snippet}`;
+          reply = `Alors ${name}, voici ce que j’ai trouvé 📚 : ${answer}`;
           break;
         case 'humoristique':
-          reply = `${name}, même mon serveur rigole 😆 : ${snippet}`;
+          reply = `${name}, même mon CPU rigole 😂 : ${answer}`;
           break;
         default:
-          reply = `Voici ta réponse, ${name} : ${snippet}`;
+          reply = `Voilà la réponse pour toi, ${name} : ${answer}`;
       }
 
       await client.messages.create({
@@ -51,19 +54,19 @@ app.post('/incoming', async (req, res) => {
         body: reply
       });
 
-    } catch (error) {
+    } catch (err) {
       await client.messages.create({
         from: process.env.TWILIO_PHONE_NUMBER,
         to: userNumber,
-        body: "Oups, j’ai eu un souci en cherchant 😵. Essaye encore !"
+        body: "Oups, j’ai eu un bug en cherchant 😵. Réessaye dans un instant !"
       });
     }
   }
 
-  res.sendStatus(200); // Twilio attend un status OK
+  res.sendStatus(200); // ✅ Réponse à Twilio pour dire que tout va bien
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Bot actif sur http://localhost:${PORT}`);
+  console.log(`🚀 Bot WhatsApp actif sur le port ${PORT}`);
 });
