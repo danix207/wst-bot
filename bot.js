@@ -1,4 +1,6 @@
-require('dotenv').config();
+// Chargement des variables depuis config.env
+require('dotenv').config({ path: 'config.env' });
+
 const express = require('express');
 const axios = require('axios');
 
@@ -9,6 +11,7 @@ const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER;
 
+// Gestion de l’humeur par utilisateur
 const userMoodMap = {};
 
 app.post('/incoming', async (req, res) => {
@@ -19,7 +22,7 @@ app.post('/incoming', async (req, res) => {
     return res.status(400).send('Requête invalide');
   }
 
-  // Définir l’humeur par défaut si pas encore enregistrée
+  // Humeur par défaut
   if (!userMoodMap[userNumber]) {
     userMoodMap[userNumber] = 'curieux';
   }
@@ -27,22 +30,23 @@ app.post('/incoming', async (req, res) => {
   const mood = userMoodMap[userNumber];
 
   try {
-    const search = await axios.get(`https://api.duckduckgo.com/?q=${encodeURIComponent(userMessage)}&format=json`);
-    const snippet = search.data?.Abstract || "Désolé, je n’ai pas trouvé de réponse 😕.";
+    const result = await axios.get(`https://api.duckduckgo.com/?q=${encodeURIComponent(userMessage)}&format=json`);
+    const snippet = result.data?.Abstract || "Je n’ai rien trouvé pour ta question 😕.";
 
+    // Création du message selon l’humeur
     let reply = '';
     switch (mood) {
       case 'curieux':
-        reply = `📖 Voici ce que j’ai appris : ${snippet}`;
+        reply = `📖 Voici ce que j’ai trouvé : ${snippet}`;
         break;
       case 'humoristique':
-        reply = `🤣 Même mon processeur a rigolé : ${snippet}`;
+        reply = `😄 Mon CPU a rigolé ! ➜ ${snippet}`;
         break;
       default:
         reply = `✅ Résultat : ${snippet}`;
     }
 
-    // Envoi du message via l'API Twilio (HTTP Basic Auth)
+    // Envoi du message via l’API Twilio (HTTP)
     await axios.post(
       `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`,
       new URLSearchParams({
@@ -59,12 +63,14 @@ app.post('/incoming', async (req, res) => {
     );
 
   } catch (error) {
+    console.error("❌ Erreur Twilio ou DuckDuckGo :", error.message);
+
     await axios.post(
       `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`,
       new URLSearchParams({
         From: TWILIO_PHONE,
         To: userNumber,
-        Body: "❌ Une erreur est survenue. Essaie encore dans un instant !"
+        Body: "⚠️ Une erreur est survenue. Réessaie dans un instant !"
       }),
       {
         auth: {
@@ -75,7 +81,7 @@ app.post('/incoming', async (req, res) => {
     );
   }
 
-  res.sendStatus(200);
+  res.sendStatus(200); // Confirme à Twilio que la requête a été traitée
 });
 
 const PORT = process.env.PORT || 3000;
