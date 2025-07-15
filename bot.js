@@ -6,67 +6,56 @@ const twilio = require('twilio');
 const app = express();
 app.use(express.urlencoded({ extended: false }));
 
-// ✔️ Initialisation correcte de Twilio (plus d'erreur de "username")
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
-const personaMap = {}; // Mémoire pour chaque utilisateur
+// Humeur personnalisée par numéro
+const userMoodMap = {};
 
 app.post('/incoming', async (req, res) => {
   const userNumber = req.body.From;
   const userMessage = req.body.Body.trim();
 
-  // 🟢 Si c'est un nouvel utilisateur : demande le prénom
-  if (!personaMap[userNumber]) {
-    personaMap[userNumber] = {
-      name: userMessage,
-      mood: 'curieux' // Tu peux changer l'humeur plus tard
-    };
+  // Humeur par défaut
+  if (!userMoodMap[userNumber]) {
+    userMoodMap[userNumber] = 'curieux';
+  }
+
+  const mood = userMoodMap[userNumber];
+
+  try {
+    const response = await axios.get(`https://api.duckduckgo.com/?q=${encodeURIComponent(userMessage)}&format=json`);
+    const answer = response.data?.Abstract || "Je n’ai rien trouvé pour cette question 😕.";
+
+    let reply = '';
+    switch (mood) {
+      case 'curieux':
+        reply = `📚 Voici ce que j’ai appris pour toi : ${answer}`;
+        break;
+      case 'humoristique':
+        reply = `😂 Même mon serveur a rigolé en lisant ça : ${answer}`;
+        break;
+      default:
+        reply = `✅ Réponse trouvée : ${answer}`;
+    }
 
     await client.messages.create({
       from: process.env.TWILIO_PHONE_NUMBER,
       to: userNumber,
-      body: `Bienvenue ${userMessage} 👋 ! Pose-moi ta première question, je vais explorer Internet pour toi 📡.`
+      body: reply
     });
 
-  } else {
-    const { name, mood } = personaMap[userNumber];
-
-    try {
-      const response = await axios.get(`https://api.duckduckgo.com/?q=${encodeURIComponent(userMessage)}&format=json`);
-      const answer = response.data?.Abstract || "Désolé, je n’ai rien trouvé 😅.";
-
-      // 🤖 Réponse personnalisée selon l'humeur
-      let reply = '';
-      switch (mood) {
-        case 'curieux':
-          reply = `Alors ${name}, voici ce que j’ai trouvé 📖 : ${answer}`;
-          break;
-        case 'humoristique':
-          reply = `${name}, même mon CPU a rigolé 🤣 : ${answer}`;
-          break;
-        default:
-          reply = `Voici la réponse pour toi, ${name} : ${answer}`;
-      }
-
-      await client.messages.create({
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: userNumber,
-        body: reply
-      });
-
-    } catch (err) {
-      await client.messages.create({
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: userNumber,
-        body: "Oups, j’ai eu un bug en cherchant 🔧. Essaie à nouveau !"
-      });
-    }
+  } catch (error) {
+    await client.messages.create({
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: userNumber,
+      body: "❌ Une erreur est survenue pendant la recherche. Réessaye un peu plus tard !"
+    });
   }
 
-  res.sendStatus(200); // ✔️ Indique à Twilio que tout est OK
+  res.sendStatus(200);
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Bot WhatsApp en ligne sur http://localhost:${PORT}`);
+  console.log(`🚀 Bot WhatsApp prêt sur http://localhost:${PORT}`);
 });
